@@ -3,23 +3,36 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(MaterialApp(debugShowCheckedModeBanner: false, home: SafetyApp()));
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: SafetyApp(),
+  ));
 }
 
 class SafetyApp extends StatefulWidget {
+  const SafetyApp({super.key});
+
   @override
   State<SafetyApp> createState() => _SafetyAppState();
 }
 
-class _SafetyAppState extends State<SafetyApp> with SingleTickerProviderStateMixin {
+class _SafetyAppState extends State<SafetyApp> {
+  // Shake detection
   double lastX = 0, lastY = 0, lastZ = 0;
   int shakeCount = 0;
   DateTime lastShake = DateTime.now();
+
+  // Tap detection
   int tapCount = 0;
   Timer? tapTimer;
-  bool silentMode = false;
 
+  // Modes
+  bool silentMode = false;
+  bool tracking = false;
+
+  // Data
   String location = "Lat: 11.01, Lon: 77.02";
+  List<String> alertHistory = [];
 
   OverlayEntry? banner;
 
@@ -28,6 +41,72 @@ class _SafetyAppState extends State<SafetyApp> with SingleTickerProviderStateMix
     {"name": "Apollo Hospital", "type": "Hospital"},
     {"name": "Emergency Care Center", "type": "Hospital"},
   ];
+
+  /* ---------------------- CORE FEATURES ---------------------- */
+
+  void triggerSOS() {
+    String msg = "🚨 SOS SENT\n$location";
+    alertHistory.insert(0, msg);
+    showBanner(msg);
+  }
+
+  void fakeCall() {
+    showBanner("📞 Incoming Call... (Fake)");
+  }
+
+  void shareLocation() {
+    showBanner("📤 Location Shared\n$location");
+  }
+
+  void toggleTracking() {
+    setState(() {
+      tracking = !tracking;
+    });
+
+    showBanner(tracking ? "📡 Live Tracking ON" : "📡 Tracking OFF");
+  }
+
+  void toggleSilentMode() {
+    setState(() {
+      silentMode = !silentMode;
+    });
+
+    showBanner(silentMode ? "🔇 Silent Mode ON" : "🔊 Silent Mode OFF");
+  }
+
+  /* ---------------------- GESTURES ---------------------- */
+
+  void handleTap() {
+    tapCount++;
+    tapTimer?.cancel();
+
+    tapTimer = Timer(const Duration(milliseconds: 600), () {
+      tapCount = 0;
+    });
+
+    if (tapCount == 3) {
+      triggerSOS(); // triple tap
+      tapCount = 0;
+    }
+  }
+
+  void handleLongPress() {
+    toggleSilentMode(); // long press
+  }
+
+  void handleDoubleTap() {
+    fakeCall(); // double tap
+  }
+
+  void handleSwipeUp() {
+    shareLocation(); // swipe up
+  }
+
+  void handleSwipeDown() {
+    triggerSOS(); // swipe down
+  }
+
+  /* ---------------------- SHAKE (SIMULATED) ---------------------- */
 
   void simulateShake() {
     double x = Random().nextDouble() * 20;
@@ -53,33 +132,27 @@ class _SafetyAppState extends State<SafetyApp> with SingleTickerProviderStateMix
     lastZ = z;
   }
 
-  void handleTap() {
-    tapCount++;
-    tapTimer?.cancel();
+  /* ---------------------- LOCATION ---------------------- */
 
-    tapTimer = Timer(Duration(milliseconds: 600), () {
-      tapCount = 0;
-    });
-
-    if (tapCount == 3) {
-      triggerSOS();
-      tapCount = 0;
-    }
-  }
-
-  void triggerSOS() {
-    showBanner("🚨 SOS Alert Sent!\nLocation: $location");
-  }
-
-  void toggleSilentMode() {
+  void updateLocation() {
     setState(() {
-      silentMode = !silentMode;
+      location =
+      "Lat: ${(11 + Random().nextDouble()).toStringAsFixed(4)}, "
+          "Lon: ${(77 + Random().nextDouble()).toStringAsFixed(4)}";
     });
-    showBanner(silentMode ? "🔇 Silent Emergency Mode ON" : "🔊 Silent Mode OFF");
+
+    showBanner("📍 Location Updated\n$location");
   }
+
+  /* ---------------------- UI UTIL ---------------------- */
 
   void showBanner(String message) {
+    if (!mounted) return;
+
     banner?.remove();
+
+    final overlay = Overlay.of(context, rootOverlay: true);
+    if (overlay == null) return;
 
     banner = OverlayEntry(
       builder: (context) => Positioned(
@@ -87,65 +160,92 @@ class _SafetyAppState extends State<SafetyApp> with SingleTickerProviderStateMix
         left: 0,
         right: 0,
         child: Material(
-          color: Colors.transparent,
-          child: AnimatedContainer(
-            duration: Duration(milliseconds: 300),
-            padding: EdgeInsets.all(16),
-            color: Colors.black87,
-            child: SafeArea(
-              child: Text(message, style: TextStyle(color: Colors.white)),
+          color: Colors.black87,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white),
+              ),
             ),
           ),
         ),
       ),
     );
 
-    Overlay.of(context).insert(banner!);
+    overlay.insert(banner!);
 
-    Future.delayed(Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 3), () {
       banner?.remove();
+      banner = null;
     });
   }
 
-  void updateLocation() {
-    setState(() {
-      location = "Lat: ${11 + Random().nextDouble()}, Lon: ${77 + Random().nextDouble()}";
-    });
-    showBanner("📍 Location Updated\n$location");
-  }
+  /* ---------------------- BUILD ---------------------- */
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Women Safety")),
+      appBar: AppBar(title: const Text("Women Safety")),
+
       body: GestureDetector(
         onTap: handleTap,
-        onDoubleTap: simulateShake,
+        onDoubleTap: handleDoubleTap,
+        onLongPress: handleLongPress,
+        onVerticalDragEnd: (details) {
+          if (details.primaryVelocity! < 0) {
+            handleSwipeUp(); // swipe up
+          } else {
+            handleSwipeDown(); // swipe down
+          }
+        },
+
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text("Current Location", style: TextStyle(fontSize: 18)),
-            SizedBox(height: 10),
-            Text(location, style: TextStyle(fontSize: 16)),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
+
+            Text("Location: $location"),
+
             ElevatedButton(
               onPressed: updateLocation,
-              child: Text("Update Location"),
+              child: const Text("Update Location"),
             ),
-            SizedBox(height: 20),
-            GestureDetector(
-              onLongPress: toggleSilentMode,
-              child: Container(
-                padding: EdgeInsets.all(20),
-                color: silentMode ? Colors.red : Colors.grey,
-                child: Text(
-                  "Hold for Silent Emergency",
-                  style: TextStyle(color: Colors.white),
-                ),
+
+            ElevatedButton(
+              onPressed: toggleTracking,
+              child: Text(tracking ? "Stop Tracking" : "Start Tracking"),
+            ),
+
+            ElevatedButton(
+              onPressed: fakeCall,
+              child: const Text("Fake Call"),
+            ),
+
+            ElevatedButton(
+              onPressed: shareLocation,
+              child: const Text("Share Location"),
+            ),
+
+            const SizedBox(height: 10),
+
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: silentMode ? Colors.red : Colors.grey,
+              child: const Text(
+                "Long Press Anywhere → Silent Mode\n"
+                    "Triple Tap → SOS\n"
+                    "Double Tap → Fake Call\n"
+                    "Swipe Up → Share Location\n"
+                    "Swipe Down → SOS",
+                style: TextStyle(color: Colors.white),
               ),
             ),
-            SizedBox(height: 30),
-            Text("Nearby Help", style: TextStyle(fontSize: 18)),
+
+            const SizedBox(height: 10),
+
+            const Text("Nearby Help"),
+
             Expanded(
               child: ListView.builder(
                 itemCount: nearby.length,
@@ -153,21 +253,38 @@ class _SafetyAppState extends State<SafetyApp> with SingleTickerProviderStateMix
                   var place = nearby[i];
                   return ListTile(
                     leading: Icon(
-                      place["type"] == "Police" ? Icons.local_police : Icons.local_hospital,
-                      color: place["type"] == "Police" ? Colors.blue : Colors.red,
+                      place["type"] == "Police"
+                          ? Icons.local_police
+                          : Icons.local_hospital,
                     ),
                     title: Text(place["name"]!),
                     subtitle: Text(place["type"]!),
                   );
                 },
               ),
-            )
+            ),
+
+            const Divider(),
+
+            const Text("Alert History"),
+
+            Expanded(
+              child: ListView.builder(
+                itemCount: alertHistory.length,
+                itemBuilder: (_, i) {
+                  return ListTile(
+                    title: Text(alertHistory[i]),
+                  );
+                },
+              ),
+            ),
           ],
         ),
       ),
+
       floatingActionButton: FloatingActionButton(
         onPressed: simulateShake,
-        child: Icon(Icons.warning),
+        child: const Icon(Icons.warning),
       ),
     );
   }
