@@ -35,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // Free public APIs (no API key required)
   final List<Map<String, String>> _apis = [
     {'name': 'Random User', 'url': 'https://randomuser.me/api/'},
-    {'name': 'Random Quote', 'url': 'https://api.quotable.io/random'},
+    {'name': 'Random Quote', 'url': 'https://zenquotes.io/api/random'},
     {'name': 'Random Dog', 'url': 'https://dog.ceo/api/breeds/image/random'},
     {'name': 'Random Cat', 'url': 'https://api.thecatapi.com/v1/images/search?limit=1'},
     {'name': 'Random Joke', 'url': 'https://v2.jokeapi.dev/joke/Any?type=single'},
@@ -49,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final response = await http.get(Uri.parse(url));
-      
+
       if (response.statusCode == 200) {
         final jsonData = json.decode(response.body);
         setState(() {
@@ -143,11 +143,21 @@ class _HomeScreenState extends State<HomeScreen> {
       widgets.add(Text('Country: ${user['location']['country']}'));
       widgets.add(const SizedBox(height: 8));
       widgets.add(Text('Phone: ${user['phone']}'));
-    } 
+    }
     else if (type == 'Random Quote') {
-      widgets.add(Text('"${data['content']}"', style: const TextStyle(fontStyle: FontStyle.italic)));
+      widgets.add(
+        Text(
+          '"${data[0]['q']}"',
+          style: const TextStyle(fontStyle: FontStyle.italic),
+        ),
+      );
       widgets.add(const SizedBox(height: 8));
-      widgets.add(Text('- ${data['author']}', style: const TextStyle(fontWeight: FontWeight.bold)));
+      widgets.add(
+        Text(
+          '- ${data[0]['a']}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      );
     }
     else if (type == 'Random Dog') {
       widgets.add(Image.network(data['message'], height: 200));
