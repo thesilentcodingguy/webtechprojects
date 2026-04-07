@@ -3,35 +3,37 @@ import 'package:math_expressions/math_expressions.dart';
 import 'dart:math';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Colorful Scientific Calculator',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-      ),
-      home: Calculator(),
+      title: 'Scientific Calculator',
+      theme: ThemeData.dark(),
+      home: const Calculator(),
     );
   }
 }
 
 class Calculator extends StatefulWidget {
+  const Calculator({super.key});
+
   @override
   State<Calculator> createState() => _CalculatorState();
 }
 
-class _CalculatorState extends State<Calculator> with SingleTickerProviderStateMixin {
+class _CalculatorState extends State<Calculator>
+    with SingleTickerProviderStateMixin {
   String display = "0";
   String expression = "";
-  late AnimationController _animationController;
+  late AnimationController _controller;
 
-  final Map<String, Color> buttonColors = {
+  final Map<String, Color> colors = {
     'sin': Colors.deepPurple,
     'cos': Colors.deepPurple,
     'tan': Colors.deepPurple,
@@ -41,8 +43,6 @@ class _CalculatorState extends State<Calculator> with SingleTickerProviderStateM
     'abs': Colors.deepPurple,
     'π': Colors.orange,
     'e': Colors.orange,
-    '(': Colors.blueGrey,
-    ')': Colors.blueGrey,
     'C': Colors.red,
     '=': Colors.green,
     '^': Colors.teal,
@@ -50,144 +50,117 @@ class _CalculatorState extends State<Calculator> with SingleTickerProviderStateM
     '-': Colors.cyan,
     '*': Colors.cyan,
     '/': Colors.cyan,
-    '.': Colors.white70,
   };
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
+    _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 120),
     );
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
-  void buttonPressed(String value) {
+  void press(String val) {
     setState(() {
-      _animationController.forward(from: 0.0);
+      _controller.forward(from: 0);
 
-      if (value == "C") {
+      if (val == "C") {
         display = "0";
         expression = "";
+        return;
       }
-      else if (value == "=") {
-        try {
-          String toEval = expression;
-          toEval = toEval.replaceAll('×', '*');
-          toEval = toEval.replaceAll('÷', '/');
-          toEval = toEval.replaceAll('π', pi.toString());
-          toEval = toEval.replaceAll('e', e.toString());
 
-          // IMPORTANT: use Parser
-          Parser p = Parser();
-          Expression exp = p.parse(toEval);
+      if (val == "=") {
+        calculate();
+        return;
+      }
 
-          ContextModel cm = ContextModel();
-          double result = exp.evaluate(EvaluationType.REAL, cm);
+      switch (val) {
+        case "sin":
+        case "cos":
+        case "tan":
+        case "log":
+        case "ln":
+        case "abs":
+          expression += "$val(";
+          break;
 
-          if (result == result.toInt()) {
-            display = result.toInt().toString();
-            expression = display;
-          } else {
-            display = result
-                .toStringAsFixed(8)
-                .replaceAll(RegExp(r'0+$'), '')
-                .replaceAll(RegExp(r'\.$'), '');
-            expression = display;
-          }
-        } catch (e) {
-          display = "Error";
-          expression = "";
-        }
+        case "√":
+          expression += "sqrt(";
+          break;
+
+        case "π":
+          expression += pi.toString();
+          break;
+
+        case "e":
+          expression += e.toString();
+          break;
+
+        default:
+          expression += val;
       }
-      else if (value == "sin") {
-        expression += "sin(";
-        display = expression;
-      }
-      else if (value == "cos") {
-        expression += "cos(";
-        display = expression;
-      }
-      else if (value == "tan") {
-        expression += "tan(";
-        display = expression;
-      }
-      else if (value == "log") {
-        expression += "log(";
-        display = expression;
-      }
-      else if (value == "ln") {
-        expression += "ln(";
-        display = expression;
-      }
-      else if (value == "√") {
-        expression += "sqrt(";
-        display = expression;
-      }
-      else if (value == "^") {
-        expression += "^";
-        display = expression;
-      }
-      else if (value == "π") {
-        expression += "π";
-        display = expression;
-      }
-      else if (value == "e") {
-        expression += "e";
-        display = expression;
-      }
-      else if (value == "abs") {
-        expression += "abs(";
-        display = expression;
-      }
-      else if (value == "(") {
-        expression += "(";
-        display = expression;
-      }
-      else if (value == ")") {
-        expression += ")";
-        display = expression;
-      }
-      else {
-        expression += value;
-        display = expression;
-      }
+
+      display = expression;
     });
   }
 
-  Widget _buildButton(String text, {double flex = 1}) {
-    Color buttonColor = buttonColors[text] ?? Colors.blue;
-    Color textColor = Colors.white;
+  void calculate() {
+    try {
+      String expStr = expression;
 
-    if (text == 'C') textColor = Colors.white;
-    if (text == '=') textColor = Colors.white;
+      // Replace power a^b → pow(a,b)
+      expStr = expStr.replaceAllMapped(
+        RegExp(r'(\d+(\.\d+)?)\^(\d+(\.\d+)?)'),
+            (m) => 'pow(${m[1]},${m[3]})',
+      );
 
+      Parser p = Parser();
+      Expression exp = p.parse(expStr);
+      ContextModel cm = ContextModel();
+
+      double result = exp.evaluate(EvaluationType.REAL, cm);
+
+      String formatted = (result % 1 == 0)
+          ? result.toInt().toString()
+          : result
+          .toStringAsFixed(8)
+          .replaceAll(RegExp(r'0+$'), '')
+          .replaceAll(RegExp(r'\.$'), '');
+
+      display = formatted;
+      expression = formatted;
+    } catch (e) {
+      display = "Error";
+      expression = "";
+    }
+  }
+
+  Widget btn(String text, {int flex = 1}) {
     return Expanded(
-      flex: flex.toInt(),
+      flex: flex,
       child: Padding(
-        padding: const EdgeInsets.all(4.0),
+        padding: const EdgeInsets.all(4),
         child: AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
+          animation: _controller,
+          builder: (_, __) {
             return Transform.scale(
-              scale: 1.0 - (_animationController.value * 0.05),
+              scale: 1 - (_controller.value * 0.05),
               child: ElevatedButton(
-                onPressed: () => buttonPressed(text),
+                onPressed: () => press(text),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: buttonColor,
-                  foregroundColor: textColor,
+                  backgroundColor: colors[text] ?? Colors.blueGrey,
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  elevation: 4,
-                  shadowColor: buttonColor.withOpacity(0.5),
                 ),
                 child: Text(
                   text,
@@ -204,149 +177,60 @@ class _CalculatorState extends State<Calculator> with SingleTickerProviderStateM
     );
   }
 
+  Widget row(List<String> items, {List<int>? flex}) {
+    return Row(
+      children: List.generate(items.length, (i) {
+        return btn(items[i], flex: flex?[i] ?? 1);
+      }),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
+            colors: [Colors.grey.shade900, Colors.black],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Colors.grey.shade900,
-              Colors.grey.shade800,
-            ],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
-              // Display Area
+              // DISPLAY
               Container(
                 margin: const EdgeInsets.all(20),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
+                padding: const EdgeInsets.all(20),
+                width: double.infinity,
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black38,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      display,
-                      style: const TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.w300,
-                        color: Colors.white,
-                        letterSpacing: 1.5,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (expression.isNotEmpty && display != expression)
-                      Text(
-                        expression,
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.white.withOpacity(0.5),
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
+                child: Text(
+                  display,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 48,
+                    color: Colors.white,
+                  ),
                 ),
               ),
 
-              // Buttons Grid
+              // BUTTONS
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    children: [
-                      // Row 1: Scientific functions
-                      Row(
-                        children: [
-                          _buildButton("sin"),
-                          _buildButton("cos"),
-                          _buildButton("tan"),
-                          _buildButton("log"),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Row 2: More scientific
-                      Row(
-                        children: [
-                          _buildButton("ln"),
-                          _buildButton("√"),
-                          _buildButton("abs"),
-                          _buildButton("C"),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Row 3: Constants and brackets
-                      Row(
-                        children: [
-                          _buildButton("π"),
-                          _buildButton("e"),
-                          _buildButton("("),
-                          _buildButton(")"),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Row 4: Numbers 7-9 and operators
-                      Row(
-                        children: [
-                          _buildButton("7"),
-                          _buildButton("8"),
-                          _buildButton("9"),
-                          _buildButton("/"),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Row 5: Numbers 4-6
-                      Row(
-                        children: [
-                          _buildButton("4"),
-                          _buildButton("5"),
-                          _buildButton("6"),
-                          _buildButton("*"),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Row 6: Numbers 1-3
-                      Row(
-                        children: [
-                          _buildButton("1"),
-                          _buildButton("2"),
-                          _buildButton("3"),
-                          _buildButton("-"),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Row 7: Numbers 0 and operators
-                      Row(
-                        children: [
-                          _buildButton("0", flex: 2),
-                          _buildButton("."),
-                          _buildButton("^"),
-                          _buildButton("+"),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-
-                      // Row 8: Equals
-                      Row(
-                        children: [
-                          _buildButton("=", flex: 4),
-                        ],
-                      ),
-                    ],
-                  ),
+                child: Column(
+                  children: [
+                    row(["sin", "cos", "tan", "log"]),
+                    row(["ln", "√", "abs", "C"]),
+                    row(["π", "e", "(", ")"]),
+                    row(["7", "8", "9", "/"]),
+                    row(["4", "5", "6", "*"]),
+                    row(["1", "2", "3", "-"]),
+                    row(["0", ".", "^", "+"], flex: [2, 1, 1, 1]),
+                    row(["="], flex: [4]),
+                  ],
                 ),
               ),
             ],
