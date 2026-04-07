@@ -1,0 +1,1473 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:intl/intl.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService().init();
+  runApp(MyApp());
+}
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+class NotificationService {
+  Future<void> init() async {
+    const AndroidInitializationSettings androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const InitializationSettings settings =
+        InitializationSettings(android: androidSettings);
+
+    await flutterLocalNotificationsPlugin.initialize(settings);
+  }
+
+  Future<void> showNotification(
+      String title, String body, {int id = 0}) async {
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+      'lms_channel',
+      'Learning Management System',
+      importance: Importance.max,
+      priority: Priority.high,
+      channelDescription: 'Notifications for assignments, announcements, and messages',
+    );
+
+    const NotificationDetails details =
+        NotificationDetails(android: androidDetails);
+
+    await flutterLocalNotificationsPlugin.show(
+      id,
+      title,
+      body,
+      details,
+    );
+  }
+
+  Future<void> showScheduledNotification(
+      String title, String body, DateTime scheduledTime, int id) async {
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+      'scheduled_channel',
+      'Scheduled Notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+
+    const NotificationDetails details =
+        NotificationDetails(android: androidDetails);
+
+    await flutterLocalNotificationsPlugin.schedule(
+      id,
+      title,
+      body,
+      scheduledTime,
+      details,
+    );
+  }
+}
+
+// Models
+class Student {
+  final String id;
+  final String name;
+  final String email;
+  final String phone;
+  final DateTime enrollmentDate;
+  double attendance;
+  List<String> achievements;
+  Map<String, bool> assignmentsStatus;
+
+  Student({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.phone,
+    required this.enrollmentDate,
+    this.attendance = 0,
+    this.achievements = const [],
+    this.assignmentsStatus = const {},
+  });
+
+  int get age => DateTime.now().difference(enrollmentDate).inDays ~/ 365;
+}
+
+class Assignment {
+  final String id;
+  final String title;
+  final String description;
+  final DateTime dueDate;
+  final int totalMarks;
+  final DateTime assignedDate;
+  Map<String, int> marks; // studentId -> marks
+
+  Assignment({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.dueDate,
+    required this.totalMarks,
+    required this.assignedDate,
+    this.marks = const {},
+  });
+
+  bool isOverdue() => DateTime.now().isAfter(dueDate);
+}
+
+class Announcement {
+  final String id;
+  final String title;
+  final String content;
+  final DateTime date;
+  final List<String> attachments;
+
+  Announcement({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.date,
+    this.attachments = const [],
+  });
+}
+
+class Message {
+  final String id;
+  final String fromId; // teacher id or student id
+  final String toId;
+  final String content;
+  final DateTime timestamp;
+  final bool isRead;
+  final String type; // 'teacher_to_all', 'teacher_to_student', 'student_to_teacher'
+
+  Message({
+    required this.id,
+    required this.fromId,
+    required this.toId,
+    required this.content,
+    required this.timestamp,
+    this.isRead = false,
+    required this.type,
+  });
+}
+
+class Course {
+  final String id;
+  final String name;
+  final String code;
+  final String teacherId;
+  List<String> studentIds;
+  List<Assignment> assignments;
+  List<Announcement> announcements;
+  String schedule;
+
+  Course({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.teacherId,
+    this.studentIds = const [],
+    this.assignments = const [],
+    this.announcements = const [],
+    this.schedule = 'TBA',
+  });
+}
+
+// Main App
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'EduManage Pro',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+        ),
+      ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: ThemeMode.system,
+      home: LoginPage(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+// Authentication (Local)
+class AuthService {
+  static final Map<String, Map<String, dynamic>> _users = {
+    'teacher1': {
+      'password': 'teacher123',
+      'role': 'teacher',
+      'name': 'Prof. Johnson',
+      'id': 'TCH001',
+    },
+    'student1': {
+      'password': 'student123',
+      'role': 'student',
+      'name': 'Alice Smith',
+      'id': 'STU001',
+    },
+    'student2': {
+      'password': 'student123',
+      'role': 'student',
+      'name': 'Bob Wilson',
+      'id': 'STU002',
+    },
+    'student3': {
+      'password': 'student123',
+      'role': 'student',
+      'name': 'Charlie Brown',
+      'id': 'STU003',
+    },
+  };
+
+  static Map<String, dynamic>? currentUser;
+
+  static bool login(String username, String password) {
+    if (_users.containsKey(username) && _users[username]!['password'] == password) {
+      currentUser = _users[username];
+      currentUser!['username'] = username;
+      return true;
+    }
+    return false;
+  }
+
+  static void logout() {
+    currentUser = null;
+  }
+
+  static bool isTeacher() => currentUser?['role'] == 'teacher';
+  static bool isStudent() => currentUser?['role'] == 'student';
+}
+
+// Data Management
+class DataManager {
+  static final List<Student> students = [
+    Student(
+      id: 'STU001',
+      name: 'Alice Smith',
+      email: 'alice@example.com',
+      phone: '+1234567890',
+      enrollmentDate: DateTime(2024, 1, 15),
+      attendance: 92,
+      achievements: ['Perfect Attendance - Jan', 'Top Performer - Math'],
+      assignmentsStatus: {'ASSIGN001': true, 'ASSIGN002': false},
+    ),
+    Student(
+      id: 'STU002',
+      name: 'Bob Wilson',
+      email: 'bob@example.com',
+      phone: '+1234567891',
+      enrollmentDate: DateTime(2024, 1, 20),
+      attendance: 85,
+      achievements: ['Most Improved'],
+      assignmentsStatus: {'ASSIGN001': true, 'ASSIGN002': true},
+    ),
+    Student(
+      id: 'STU003',
+      name: 'Charlie Brown',
+      email: 'charlie@example.com',
+      phone: '+1234567892',
+      enrollmentDate: DateTime(2024, 2, 1),
+      attendance: 78,
+      achievements: [],
+      assignmentsStatus: {'ASSIGN001': false, 'ASSIGN002': false},
+    ),
+  ];
+
+  static List<Assignment> assignments = [
+    Assignment(
+      id: 'ASSIGN001',
+      title: 'Flutter Basics',
+      description: 'Create a simple Flutter app with StatefulWidget',
+      dueDate: DateTime.now().add(Duration(days: 3)),
+      totalMarks: 100,
+      assignedDate: DateTime.now(),
+      marks: {
+        'STU001': 85,
+        'STU002': 90,
+        'STU003': 0,
+      },
+    ),
+    Assignment(
+      id: 'ASSIGN002',
+      title: 'API Integration',
+      description: 'Integrate REST API in Flutter using http package',
+      dueDate: DateTime.now().add(Duration(days: 7)),
+      totalMarks: 100,
+      assignedDate: DateTime.now(),
+      marks: {
+        'STU001': 0,
+        'STU002': 0,
+        'STU003': 0,
+      },
+    ),
+  ];
+
+  static List<Announcement> announcements = [
+    Announcement(
+      id: 'ANN001',
+      title: 'Welcome to New Semester!',
+      content: 'Welcome back students! New courses and materials have been uploaded.',
+      date: DateTime.now().subtract(Duration(days: 5)),
+    ),
+    Announcement(
+      id: 'ANN002',
+      title: 'Exam Schedule',
+      content: 'Mid-term exams will start from next month. Please check the schedule.',
+      date: DateTime.now().subtract(Duration(days: 2)),
+    ),
+  ];
+
+  static List<Message> messages = [];
+
+  static Course course = Course(
+    id: 'COURSE001',
+    name: 'Advanced Flutter Development',
+    code: 'FLT301',
+    teacherId: 'TCH001',
+    studentIds: ['STU001', 'STU002', 'STU003'],
+    assignments: assignments,
+    announcements: announcements,
+    schedule: 'Mon/Wed/Fri, 10:00 AM - 12:00 PM',
+  );
+
+  static void addAssignment(Assignment assignment) {
+    assignments.add(assignment);
+    course.assignments = assignments;
+  }
+
+  static void addAnnouncement(Announcement announcement) {
+    announcements.add(announcement);
+    course.announcements = announcements;
+  }
+
+  static void addMessage(Message message) {
+    messages.add(message);
+  }
+
+  static void updateAssignmentMarks(String assignmentId, String studentId, int marks) {
+    final assignment = assignments.firstWhere((a) => a.id == assignmentId);
+    assignment.marks[studentId] = marks;
+  }
+
+  static void updateStudentAttendance(String studentId, double attendance) {
+    final student = students.firstWhere((s) => s.id == studentId);
+    student.attendance = attendance;
+  }
+
+  static void addAchievement(String studentId, String achievement) {
+    final student = students.firstWhere((s) => s.id == studentId);
+    student.achievements.add(achievement);
+  }
+}
+
+// Login Page
+class LoginPage extends StatefulWidget {
+  @override
+  _LoginPageState createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController usernameController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  bool _obscurePassword = true;
+
+  void _login() {
+    if (AuthService.login(usernameController.text, passwordController.text)) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => DashboardPage()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Invalid credentials'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.blue.shade900, Colors.purple.shade700],
+          ),
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(24),
+            child: Card(
+              elevation: 8,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.school, size: 80, color: Colors.blue),
+                    SizedBox(height: 16),
+                    Text('EduManage Pro', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 8),
+                    Text('Student - Teacher Management System', style: TextStyle(color: Colors.grey[600])),
+                    SizedBox(height: 32),
+                    TextField(
+                      controller: usernameController,
+                      decoration: InputDecoration(
+                        labelText: 'Username',
+                        prefixIcon: Icon(Icons.person),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: _obscurePassword,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: Icon(Icons.lock),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                        ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {},
+                        child: Text('Forgot Password?'),
+                      ),
+                    ),
+                    SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: _login,
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text('Login', style: TextStyle(fontSize: 18)),
+                    ),
+                    SizedBox(height: 16),
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: [
+                          Text('Demo Credentials:', style: TextStyle(fontWeight: FontWeight.bold)),
+                          SizedBox(height: 4),
+                          Text('Teacher: teacher1 / teacher123', style: TextStyle(fontSize: 12)),
+                          Text('Student: student1 / student123', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Dashboard
+class DashboardPage extends StatefulWidget {
+  @override
+  _DashboardPageState createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  int _selectedIndex = 0;
+  final NotificationService notificationService = NotificationService();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(AuthService.isTeacher() ? 'Teacher Dashboard' : 'Student Dashboard'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.notifications),
+            onPressed: () => _showNotifications(),
+          ),
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: () {
+              AuthService.logout();
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => LoginPage()));
+            },
+          ),
+        ],
+      ),
+      drawer: _buildDrawer(),
+      body: _buildBody(),
+      bottomNavigationBar: _buildBottomNavBar(),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Colors.blue),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, size: 40, color: Colors.blue),
+                ),
+                SizedBox(height: 8),
+                Text(AuthService.currentUser!['name'], style: TextStyle(color: Colors.white, fontSize: 18)),
+                Text(AuthService.currentUser!['role'].toString().toUpperCase(), style: TextStyle(color: Colors.white70)),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.dashboard),
+            title: Text('Dashboard'),
+            onTap: () => _navigateToIndex(0),
+          ),
+          if (AuthService.isTeacher()) ...[
+            ListTile(
+              leading: Icon(Icons.people),
+              title: Text('Manage Students'),
+              onTap: () => _navigateToIndex(1),
+            ),
+            ListTile(
+              leading: Icon(Icons.assignment_add),
+              title: Text('Assignments'),
+              onTap: () => _navigateToIndex(2),
+            ),
+            ListTile(
+              leading: Icon(Icons.announcement),
+              title: Text('Announcements'),
+              onTap: () => _navigateToIndex(3),
+            ),
+            ListTile(
+              leading: Icon(Icons.message),
+              title: Text('Messages'),
+              onTap: () => _navigateToIndex(4),
+            ),
+            ListTile(
+              leading: Icon(Icons.analytics),
+              title: Text('Analytics'),
+              onTap: () => _navigateToIndex(5),
+            ),
+          ] else ...[
+            ListTile(
+              leading: Icon(Icons.book),
+              title: Text('My Courses'),
+              onTap: () => _navigateToIndex(1),
+            ),
+            ListTile(
+              leading: Icon(Icons.assignment),
+              title: Text('My Assignments'),
+              onTap: () => _navigateToIndex(2),
+            ),
+            ListTile(
+              leading: Icon(Icons.announcement),
+              title: Text('Announcements'),
+              onTap: () => _navigateToIndex(3),
+            ),
+            ListTile(
+              leading: Icon(Icons.message),
+              title: Text('Messages'),
+              onTap: () => _navigateToIndex(4),
+            ),
+            ListTile(
+              leading: Icon(Icons.emoji_events),
+              title: Text('Achievements'),
+              onTap: () => _navigateToIndex(5),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomNavBar() {
+    if (AuthService.isTeacher()) {
+      return BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _navigateToIndex,
+        type: BottomNavigationBarType.fixed,
+        items: [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Students'),
+          BottomNavigationBarItem(icon: Icon(Icons.assignment), label: 'Assignments'),
+          BottomNavigationBarItem(icon: Icon(Icons.announcement), label: 'News'),
+          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Chat'),
+        ],
+      );
+    } else {
+      return BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _navigateToIndex,
+        type: BottomNavigationBarType.fixed,
+        items: [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
+          BottomNavigationBarItem(icon: Icon(Icons.assignment), label: 'Tasks'),
+          BottomNavigationBarItem(icon: Icon(Icons.announcement), label: 'News'),
+          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Chat'),
+        ],
+      );
+    }
+  }
+
+  void _navigateToIndex(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    Navigator.pop(context); // Close drawer if open
+  }
+
+  Widget _buildBody() {
+    switch (_selectedIndex) {
+      case 0:
+        return DashboardHomePage();
+      case 1:
+        return AuthService.isTeacher() ? ManageStudentsPage() : MyCoursesPage();
+      case 2:
+        return AuthService.isTeacher() ? ManageAssignmentsPage() : StudentAssignmentsPage();
+      case 3:
+        return AnnouncementsPage();
+      case 4:
+        return MessagesPage();
+      case 5:
+        return AuthService.isTeacher() ? AnalyticsPage() : AchievementsPage();
+      default:
+        return DashboardHomePage();
+    }
+  }
+
+  void _showNotifications() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Recent Notifications'),
+        content: Container(
+          height: 300,
+          child: ListView(
+            children: [
+              ListTile(
+                leading: Icon(Icons.assignment, color: Colors.orange),
+                title: Text('Assignment Due Tomorrow'),
+                subtitle: Text('Flutter Basics assignment is due tomorrow'),
+              ),
+              ListTile(
+                leading: Icon(Icons.announcement, color: Colors.blue),
+                title: Text('New Announcement'),
+                subtitle: Text('Exam schedule has been posted'),
+              ),
+              ListTile(
+                leading: Icon(Icons.message, color: Colors.green),
+                title: Text('New Message'),
+                subtitle: Text('You have 2 unread messages'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Close')),
+        ],
+      ),
+    );
+  }
+}
+
+// Dashboard Home
+class DashboardHomePage extends StatelessWidget {
+  final NotificationService notificationService = NotificationService();
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildWelcomeCard(),
+          SizedBox(height: 16),
+          _buildStatsGrid(),
+          SizedBox(height: 16),
+          _buildRecentActivities(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWelcomeCard() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [Colors.blue, Colors.purple]),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Welcome back,', style: TextStyle(color: Colors.white, fontSize: 16)),
+            Text(AuthService.currentUser!['name'], style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            Text(DateFormat('EEEE, MMMM d, yyyy').format(DateTime.now()), style: TextStyle(color: Colors.white70)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsGrid() {
+    if (AuthService.isTeacher()) {
+      return GridView.count(
+        shrinkWrap: true,
+        physics: NeverScrollableScrollPhysics(),
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        children: [
+          _buildStatCard('Total Students', DataManager.students.length.toString(), Icons.people, Colors.green),
+          _buildStatCard('Assignments', DataManager.assignments.length.toString(), Icons.assignment, Colors.orange),
+          _buildStatCard('Avg Attendance', '85%', Icons.trending_up, Colors.blue),
+          _buildStatCard('Completion Rate', '67%', Icons.check_circle, Colors.purple),
+        ],
+      );
+    } else {
+      final student = DataManager.students.firstWhere((s) => s.id == AuthService.currentUser!['id']);
+      return GridView.count(
+        shrinkWrap: true,
+        physics: NeverScrollableScrollPhysics(),
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        children: [
+          _buildStatCard('Attendance', '${student.attendance}%', Icons.calendar_today, Colors.green),
+          _buildStatCard('Assignments', student.assignmentsStatus.values.where((v) => v == true).length.toString(), Icons.assignment_turned_in, Colors.orange),
+          _buildStatCard('Achievements', student.achievements.length.toString(), Icons.emoji_events, Colors.amber),
+          _buildStatCard('Course Progress', '75%', Icons.trending_up, Colors.blue),
+        ],
+      );
+    }
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 40, color: color),
+            SizedBox(height: 8),
+            Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            Text(title, style: TextStyle(color: Colors.grey[600])),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentActivities() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Recent Activities', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            ListTile(
+              leading: CircleAvatar(child: Icon(Icons.assignment, size: 20), backgroundColor: Colors.orange),
+              title: Text('New assignment posted'),
+              subtitle: Text('Flutter Basics - Due in 3 days'),
+            ),
+            Divider(),
+            ListTile(
+              leading: CircleAvatar(child: Icon(Icons.announcement, size: 20), backgroundColor: Colors.blue),
+              title: Text('Announcement'),
+              subtitle: Text('Mid-term exam schedule released'),
+            ),
+            Divider(),
+            ListTile(
+              leading: CircleAvatar(child: Icon(Icons.achievement, size: 20), backgroundColor: Colors.green),
+              title: Text('Achievement unlocked!'),
+              subtitle: Text('Perfect attendance for January'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Teacher: Manage Students
+class ManageStudentsPage extends StatefulWidget {
+  @override
+  _ManageStudentsPageState createState() => _ManageStudentsPageState();
+}
+
+class _ManageStudentsPageState extends State<ManageStudentsPage> {
+  final NotificationService notificationService = NotificationService();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Manage Students')),
+      body: ListView.builder(
+        itemCount: DataManager.students.length,
+        itemBuilder: (context, index) {
+          final student = DataManager.students[index];
+          return Card(
+            margin: EdgeInsets.all(8),
+            child: ExpansionTile(
+              leading: CircleAvatar(child: Text(student.name[0])),
+              title: Text(student.name),
+              subtitle: Text('ID: ${student.id} | Attendance: ${student.attendance}%'),
+              children: [
+                Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Email: ${student.email}'),
+                      Text('Phone: ${student.phone}'),
+                      SizedBox(height: 8),
+                      Text('Achievements:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Wrap(
+                        children: student.achievements.map((a) => Chip(label: Text(a))).toList(),
+                      ),
+                      SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _addAchievement(student),
+                              icon: Icon(Icons.emoji_events),
+                              label: Text('Add Achievement'),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _sendMessage(student),
+                              icon: Icon(Icons.message),
+                              label: Text('Message'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _addAchievement(Student student) async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add Achievement'),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(hintText: 'Enter achievement'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              DataManager.addAchievement(student.id, controller.text);
+              notificationService.showNotification(
+                'New Achievement! 🏆',
+                '${student.name} received: ${controller.text}',
+              );
+              Navigator.pop(context);
+              setState(() {});
+            },
+            child: Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _sendMessage(Student student) async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Send Message to ${student.name}'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: InputDecoration(hintText: 'Type your message...'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              final message = Message(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                fromId: AuthService.currentUser!['id'],
+                toId: student.id,
+                content: controller.text,
+                timestamp: DateTime.now(),
+                type: 'teacher_to_student',
+              );
+              DataManager.addMessage(message);
+              notificationService.showNotification(
+                'New Message from Teacher 📧',
+                'You have a new message from ${AuthService.currentUser!['name']}',
+              );
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Message sent!')));
+            },
+            child: Text('Send'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Teacher: Manage Assignments
+class ManageAssignmentsPage extends StatefulWidget {
+  @override
+  _ManageAssignmentsPageState createState() => _ManageAssignmentsPageState();
+}
+
+class _ManageAssignmentsPageState extends State<ManageAssignmentsPage> {
+  final NotificationService notificationService = NotificationService();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Assignments')),
+      body: ListView.builder(
+        itemCount: DataManager.assignments.length,
+        itemBuilder: (context, index) {
+          final assignment = DataManager.assignments[index];
+          return Card(
+            margin: EdgeInsets.all(8),
+            child: ExpansionTile(
+              title: Text(assignment.title),
+              subtitle: Text('Due: ${DateFormat('MMM dd, yyyy').format(assignment.dueDate)} | Total: ${assignment.totalMarks}'),
+              children: [
+                Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Description: ${assignment.description}'),
+                      SizedBox(height: 8),
+                      Text('Marks:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ...DataManager.students.map((student) => ListTile(
+                        title: Text(student.name),
+                        trailing: SizedBox(
+                          width: 100,
+                          child: TextField(
+                            decoration: InputDecoration(
+                              labelText: 'Marks',
+                              border: OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.number,
+                            onSubmitted: (value) {
+                              final marks = int.tryParse(value) ?? 0;
+                              DataManager.updateAssignmentMarks(assignment.id, student.id, marks);
+                              notificationService.showNotification(
+                                'Marks Updated 📝',
+                                '${student.name} scored $marks in ${assignment.title}',
+                              );
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                      )).toList(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _createAssignment,
+        child: Icon(Icons.add),
+        tooltip: 'Create Assignment',
+      ),
+    );
+  }
+
+  void _createAssignment() async {
+    final titleController = TextEditingController();
+    final descController = TextEditingController();
+    DateTime? dueDate;
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Create Assignment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: InputDecoration(labelText: 'Title'),
+            ),
+            TextField(
+              controller: descController,
+              decoration: InputDecoration(labelText: 'Description'),
+              maxLines: 3,
+            ),
+            ListTile(
+              title: Text(dueDate == null ? 'Select Due Date' : DateFormat('MMM dd, yyyy').format(dueDate!)),
+              trailing: Icon(Icons.calendar_today),
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(Duration(days: 365)),
+                );
+                if (date != null) {
+                  dueDate = date;
+                  setState(() {});
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              final assignment = Assignment(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                title: titleController.text,
+                description: descController.text,
+                dueDate: dueDate ?? DateTime.now().add(Duration(days: 7)),
+                totalMarks: 100,
+                assignedDate: DateTime.now(),
+              );
+              DataManager.addAssignment(assignment);
+              
+              // Send notifications to all students
+              for (var student in DataManager.students) {
+                notificationService.showNotification(
+                  'New Assignment Posted 📚',
+                  '${assignment.title} has been assigned. Due: ${DateFormat('MMM dd').format(assignment.dueDate)}',
+                  id: student.id.hashCode,
+                );
+              }
+              
+              Navigator.pop(context);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Assignment created!')));
+            },
+            child: Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Student: My Courses
+class MyCoursesPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('My Courses')),
+      body: ListView(
+        padding: EdgeInsets.all(16),
+        children: [
+          Card(
+            elevation: 4,
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(DataManager.course.name, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  Text('Code: ${DataManager.course.code}', style: TextStyle(color: Colors.grey[600])),
+                  SizedBox(height: 8),
+                  Text('Teacher: ${AuthService.currentUser!['name']}'),
+                  Text('Schedule: ${DataManager.course.schedule}'),
+                  SizedBox(height: 16),
+                  LinearProgressIndicator(value: 0.75),
+                  SizedBox(height: 8),
+                  Text('Course Progress: 75%'),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(height: 16),
+          Text('Course Materials', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          ...['Week 1: Introduction', 'Week 2: Flutter Basics', 'Week 3: State Management'].map((material) => 
+            Card(
+              child: ListTile(
+                leading: Icon(Icons.description),
+                title: Text(material),
+                trailing: Icon(Icons.download),
+                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Downloading $material...')),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Student: Assignments
+class StudentAssignmentsPage extends StatelessWidget {
+  final NotificationService notificationService = NotificationService();
+
+  @override
+  Widget build(BuildContext context) {
+    final studentId = AuthService.currentUser!['id'];
+    final student = DataManager.students.firstWhere((s) => s.id == studentId);
+    
+    return Scaffold(
+      appBar: AppBar(title: Text('My Assignments')),
+      body: ListView.builder(
+        itemCount: DataManager.assignments.length,
+        itemBuilder: (context, index) {
+          final assignment = DataManager.assignments[index];
+          final isSubmitted = student.assignmentsStatus[assignment.id] ?? false;
+          final marks = assignment.marks[studentId] ?? 0;
+          
+          return Card(
+            margin: EdgeInsets.all(8),
+            child: ListTile(
+              leading: Icon(isSubmitted ? Icons.check_circle : Icons.pending, color: isSubmitted ? Colors.green : Colors.orange),
+              title: Text(assignment.title),
+              subtitle: Text('Due: ${DateFormat('MMM dd, yyyy').format(assignment.dueDate)} | Marks: $marks/${assignment.totalMarks}'),
+              trailing: isSubmitted ? Icon(Icons.done_all) : ElevatedButton(
+                onPressed: () => _submitAssignment(context, assignment, student),
+                child: Text('Submit'),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _submitAssignment(BuildContext context, Assignment assignment, Student student) async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Submit Assignment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Assignment: ${assignment.title}'),
+            SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              decoration: InputDecoration(hintText: 'Add submission notes...'),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              student.assignmentsStatus[assignment.id] = true;
+              notificationService.showNotification(
+                'Assignment Submitted 📤',
+                '${student.name} submitted ${assignment.title}',
+              );
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Assignment submitted!')));
+            },
+            child: Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Announcements (Shared)
+class AnnouncementsPage extends StatefulWidget {
+  @override
+  _AnnouncementsPageState createState() => _AnnouncementsPageState();
+}
+
+class _AnnouncementsPageState extends State<AnnouncementsPage> {
+  final NotificationService notificationService = NotificationService();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Announcements')),
+      body: ListView.builder(
+        itemCount: DataManager.announcements.length,
+        itemBuilder: (context, index) {
+          final announcement = DataManager.announcements[index];
+          return Card(
+            margin: EdgeInsets.all(8),
+            child: ListTile(
+              leading: Icon(Icons.announcement, color: Colors.blue),
+              title: Text(announcement.title, style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(announcement.content),
+                  SizedBox(height: 4),
+                  Text(DateFormat('MMM dd, yyyy • hh:mm a').format(announcement.date), style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+      floatingActionButton: AuthService.isTeacher()
+          ? FloatingActionButton(
+              onPressed: _createAnnouncement,
+              child: Icon(Icons.add),
+              tooltip: 'Post Announcement',
+            )
+          : null,
+    );
+  }
+
+  void _createAnnouncement() async {
+    final titleController = TextEditingController();
+    final contentController = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Post Announcement'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: InputDecoration(labelText: 'Title'),
+            ),
+            TextField(
+              controller: contentController,
+              decoration: InputDecoration(labelText: 'Content'),
+              maxLines: 5,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              final announcement = Announcement(
+                id: DateTime.now().millisecondsSinceEpoch.toString(),
+                title: titleController.text,
+                content: contentController.text,
+                date: DateTime.now(),
+              );
+              DataManager.addAnnouncement(announcement);
+              
+              // Notify all students
+              for (var student in DataManager.students) {
+                notificationService.showNotification(
+                  'New Announcement 📢',
+                  '${announcement.title}: ${announcement.content.substring(0, announcement.content.length > 50 ? 50 : announcement.content.length)}...',
+                );
+              }
+              
+              Navigator.pop(context);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Announcement posted!')));
+            },
+            child: Text('Post'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Messages
+class MessagesPage extends StatefulWidget {
+  @override
+  _MessagesPageState createState() => _MessagesPageState();
+}
+
+class _MessagesPageState extends State<MessagesPage> {
+  final NotificationService notificationService = NotificationService();
+  
+  List<Message> getMessages() {
+    final currentId = AuthService.currentUser!['id'];
+    return DataManager.messages
+        .where((m) => m.fromId == currentId || m.toId == currentId)
+        .toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Messages')),
+      body: ListView.builder(
+        itemCount: getMessages().length,
+        itemBuilder: (context, index) {
+          final message = getMessages()[index];
+          final isFromMe = message.fromId == AuthService.currentUser!['id'];
+          final otherName = isFromMe 
+              ? DataManager.students.firstWhere((s) => s.id == message.toId).name
+              : AuthService.currentUser!['name'];
+          
+          return Card(
+            margin: EdgeInsets.all(8),
+            child: ListTile(
+              leading: CircleAvatar(
+                child: Icon(isFromMe ? Icons.send : Icons.receive),
+                backgroundColor: isFromMe ? Colors.green : Colors.blue,
+              ),
+              title: Text(isFromMe ? 'To: $otherName' : 'From: $otherName'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(message.content),
+                  Text(DateFormat('MMM dd, hh:mm a').format(message.timestamp), style: TextStyle(fontSize: 10, color: Colors.grey)),
+                ],
+              ),
+              isThreeLine: true,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Analytics (Teacher)
+class AnalyticsPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Analytics')),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text('Attendance Overview', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 16),
+                    ...DataManager.students.map((student) => Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: Text(student.name)),
+                            Text('${student.attendance}%'),
+                          ],
+                        ),
+                        LinearProgressIndicator(value: student.attendance / 100),
+                        SizedBox(height: 8),
+                      ],
+                    )).toList(),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text('Assignment Performance', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 16),
+                    ...DataManager.assignments.map((assignment) => Column(
+                      children: [
+                        Text(assignment.title, style: TextStyle(fontWeight: FontWeight.bold)),
+                        ...DataManager.students.map((student) => Row(
+                          children: [
+                            Expanded(child: Text(student.name)),
+                            Text('${assignment.marks[student.id] ?? 0}/${assignment.totalMarks}'),
+                          ],
+                        )).toList(),
+                        Divider(),
+                      ],
+                    )).toList(),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Achievements (Student)
+class AchievementsPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final student = DataManager.students.firstWhere((s) => s.id == AuthService.currentUser!['id']);
+    
+    return Scaffold(
+      appBar: AppBar(title: Text('My Achievements')),
+      body: GridView.count(
+        crossAxisCount: 2,
+        padding: EdgeInsets.all(16),
+        children: student.achievements.map((achievement) => Card(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.emoji_events, size: 50, color: Colors.amber),
+              SizedBox(height: 8),
+              Text(achievement, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+        )).toList(),
+      ),
+    );
+  }
+}
